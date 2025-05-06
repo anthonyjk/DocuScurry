@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QMainWindow, QF
 
 class MuPDFScurrier(QThread):
 	progress = pyqtSignal(int)
+	current_pdf = pyqtSignal(str)
 	finished = pyqtSignal(list)
 	error = pyqtSignal(str)
 
@@ -53,6 +54,8 @@ class MuPDFScurrier(QThread):
 
 			# Get PDF Data
 			data = self.pdf_scrape(file_paths[i])
+			print(data["title"])
+			self.current_pdf.emit(data["title"])
 
 			# Begin PDF insertion
 			f.write('\t{\n')
