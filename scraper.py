@@ -5,6 +5,7 @@ from pdf import PDF
 from glob import glob
 import re
 import time
+import pandas as pd
 
 from PyQt5.QtCore import QSize, Qt, QThread, pyqtSignal
 from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QMainWindow, QFileDialog, 
@@ -16,10 +17,18 @@ class MuPDFScurrier(QThread):
 	finished = pyqtSignal(list)
 	error = pyqtSignal(str)
 
-	def __init__(self, directory):
+	def __init__(self, settings, directory):
 		super().__init__()
 		self.directory = directory
 		self.results = []
+
+		self.use_image_ocr = settings[0]
+		self.include_references = settings[1]
+		self.no_links = settings[2]
+		self.get_latex = settings[3]
+		self.table_mode = settings[4]
+		self.headtail_mode = settings[5]
+		self.output_type = settings[6]
 
 	def run(self):
 		'''
@@ -96,26 +105,27 @@ class MuPDFScurrier(QThread):
 			f.write('\t\t],\n')
 
 			# Images
-			end = ","
-			f.write('\t\t"images": [\n')
-			for i in range(len(data["images"])):
-				if i == len(data["images"]) - 1:
-					end = ""
+			if(self.use_image_ocr == True): # If checkbox for Image Text Extraction is checked
+				end = ","
+				f.write('\t\t"images": [\n')
+				for i in range(len(data["images"])):
+					if i == len(data["images"]) - 1:
+						end = ""
 
-				#print(data["images"][i])
-				if data["images"][i] == []:
-					f.write(f'\t\t\tnull{end}\n')
-				elif len(data["images"][i]) == 1:
-					f.write(f'\t\t\t"{data["images"][i][0]}"{end}\n')
-				else:
-					f.write('\t\t\t[')
-					collect = ''
-					for j in range(len(data["images"][i])):
-						if(data["images"][i][j] != ""):
-							collect += f'"{data["images"][i][j]}", '
-					collect = collect[:-2] # Remove last ', '
-					f.write(f'{collect}]{end}\n')
-			f.write('\t\t]\n')
+					#print(data["images"][i])
+					if data["images"][i] == []:
+						f.write(f'\t\t\tnull{end}\n')
+					elif len(data["images"][i]) == 1:
+						f.write(f'\t\t\t"{data["images"][i][0]}"{end}\n')
+					else:
+						f.write('\t\t\t[')
+						collect = ''
+						for j in range(len(data["images"][i])):
+							if(data["images"][i][j] != ""):
+								collect += f'"{data["images"][i][j]}", '
+						collect = collect[:-2] # Remove last ', '
+						f.write(f'{collect}]{end}\n')
+				f.write('\t\t]\n')
 
 			# End PDF Data
 			f.write('\t}' + tot_end + '\n')
@@ -131,6 +141,12 @@ class MuPDFScurrier(QThread):
 		f.write(']')
 		f.close()
 
+		try:
+			os.remove('./temp.jpeg')
+		except:
+			pass
+
+		self.convert_output()
 		self.progress.emit(100)
 		self.finished.emit(self.results)
 
@@ -163,10 +179,11 @@ class MuPDFScurrier(QThread):
 				text.append(pdf.collapse_text(pg_txt))
 				tables.append(pdf.collapse_tables(pdf.raw_tables(i)))
 
-				pg_img = []
-				for txt in pdf.raw_images(i):
-					pg_img.append(pdf.collapse_text(txt))
-				images.append(pg_img)
+				if(self.use_image_ocr == True): # Get Images Check
+					pg_img = []
+					for txt in pdf.raw_images(i):
+						pg_img.append(pdf.collapse_text(txt))
+					images.append(pg_img)
 
 		try:
 			title = path[::-1].index('\\')
@@ -176,13 +193,15 @@ class MuPDFScurrier(QThread):
 			title = path[len(path) - title:len(path) - 4]
 
 		# Headers
-		text = self.remove_nonword_leads(text)
-		text = self.strip_headers(text)
-		text = self.remove_nonword_leads(text)
+		if(self.headtail_mode == "Remove Both" or self.headtail_mode == "Keep Footers"):
+			text = self.remove_nonword_leads(text)
+			text = self.strip_headers(text)
+			text = self.remove_nonword_leads(text)
 
 		# Footers
-		text = self.strip_footers(text)
-		text = self.remove_nonword_leads(text, flip=True)
+		if(self.headtail_mode == "Remove Both" or self.headtail_mode == "Keep Headers"):
+			text = self.strip_footers(text)
+			text = self.remove_nonword_leads(text, flip=True)
 
 		# In-Text
 		text = self.remove_links(text)
@@ -200,6 +219,17 @@ class MuPDFScurrier(QThread):
 
 		return data
 
+	def convert_output(self):
+		if(self.output_type == ".json"):
+			pass # Do nothing
+
+		elif(self.output_type == ".csv"):
+			df = pd.read_json('./data.json')
+			df.to_csv('data.csv', index=False)
+			os.remove('./data.json')
+
+
+
 	def strip_headers(self, text):
 		"""
 		Finds repeating headers in text array and removes it from the text
@@ -209,7 +239,7 @@ class MuPDFScurrier(QThread):
 		returns: modified text array
 		"""
 
-		def header_info(text, first):
+		def header_info(text, first, alternate=True):
 			'''
 			DOCSTRING HERE
 			'''
@@ -226,7 +256,10 @@ class MuPDFScurrier(QThread):
 			str1 = ""
 			string_idx = []
 			for i in range(len(text)):
-				if i % 2 == 0: string_idx.append(i) # Only alternating pages
+				if(alternate):
+					if i % 2 == 0: string_idx.append(i) # Only alternating pages
+				else:
+					string_idx.append(i)
 
 			# Get header repeats in text based off of first input
 			str_col = []
@@ -262,26 +295,46 @@ class MuPDFScurrier(QThread):
 				string_idx[i] += first
 
 			return [string_idx, str1]
+			# END OF HEADER_INFO
 
-		# Even and Odd page numbers
-		for i in range(4):
-			occurs, string = header_info(text, i)
+
+		if(len(text) > 3):
+			# Even and Odd page numbers
+			for i in range(4):
+				occurs, string = header_info(text, i)
+				if(len(string) > 0):
+					for p in occurs:
+						idx = 0
+						t_str = ""
+						matches = True
+						while matches and idx < len(string):
+							if text[p][0].isdigit() or text[p][0] == ' ':
+								text[p] = text[p].replace(text[p][0], '', 1) # Don't update idx, removes numbers & spaces
+							elif text[p][0] == string[idx]:
+								t_str += text[p][0]
+								idx += 1
+
+								# Update string
+								text[p] = text[p].replace(text[p][0], '', 1)
+							else:
+								matches = False # If no conditions can be met, it does not match
+		else:
+			occurs, string = header_info(text, 0, False)
+			print(occurs)
 			if(len(string) > 0):
 				for p in occurs:
+					if(len(text[p]) < len(string)): continue
 					idx = 0
 					t_str = ""
-					matches = True
-					while matches and idx < len(string):
-						if text[p][0].isdigit() or text[p][0] == ' ':
-							text[p] = text[p].replace(text[p][0], '', 1) # Don't update idx, removes numbers & spaces
-						elif text[p][0] == string[idx]:
+					while(idx < len(string)):
+						if(text[p][idx].isdigit() or text[p][idx] == ' '):
+							text[p] = text[p].replace(text[p][idx], '', 1)
+						elif(text[p][idx] == string[idx]):
 							t_str += text[p][0]
 							idx += 1
 
-							# Update string
-							text[p] = text[p].replace(text[p][0], '', 1)
-						else:
-							matches = False # If no conditions can be met, it does not match
+					text[p] = text[p].replace(string, '', 1)
+
 		return text
 
 	def strip_footers(self, text):

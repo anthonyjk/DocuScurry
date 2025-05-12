@@ -1,7 +1,7 @@
 import sys
 import os
 
-#from dataScurrier import MuPDFScurrier
+from scraper import MuPDFScurrier
 
 from PyQt5.QtGui import QPixmap, QFont
 from PyQt5.QtCore import QSize, Qt, QThread, pyqtSignal
@@ -82,15 +82,29 @@ class MainWindow(QMainWindow):
 		head_label.setFont(title_font)
 
 		# Settings
-		ocr_check = QCheckBox("Image OCR Scanning")
-
-		ref_check = QCheckBox("Include References")
+		self.ocr_check = QCheckBox("Image Textual Extraction")
+		self.ref_check = QCheckBox("Include References")
+		self.link_check = QCheckBox("Remove In-text Links")
+		self.latex_check = QCheckBox("LaTeX Extraction")
 
 		table_label = QLabel("Table Extraction Mode")
-		table_dropdown = QComboBox()
-		table_dropdown.addItem("None")
-		table_dropdown.addItem("Textual")
-		table_dropdown.addItem("Data")
+		self.table_dropdown = QComboBox()
+		self.table_dropdown.addItem("None")
+		self.table_dropdown.addItem("Textual")
+		self.table_dropdown.addItem("Data")
+
+		headtail_label = QLabel("Headers & Footers Mode")
+		self.headtail_dropdown = QComboBox()
+		self.headtail_dropdown.addItem("Keep Both")
+		self.headtail_dropdown.addItem("Keep Headers")
+		self.headtail_dropdown.addItem("Keep Footers")
+		self.headtail_dropdown.addItem("Remove Both")
+
+		output_label = QLabel("Output Filetype")
+		self.output_dropdown = QComboBox()
+		self.output_dropdown.addItem(".json")
+		self.output_dropdown.addItem(".csv")
+		self.output_dropdown.addItem(".txt")
 
 		# Start Scrape Buttons & Label
 		scrape_font = QFont()
@@ -111,12 +125,18 @@ class MainWindow(QMainWindow):
 
 		# UPPER SECTION
 		left_vbox = QVBoxLayout()
-		left_vbox.addWidget(ocr_check, 0, Qt.AlignCenter | Qt.AlignTop)
-		left_vbox.addWidget(ref_check, 0, Qt.AlignCenter | Qt.AlignTop)
+		left_vbox.addWidget(self.ocr_check, 0, Qt.AlignCenter | Qt.AlignTop)
+		left_vbox.addWidget(self.ref_check, 0, Qt.AlignCenter | Qt.AlignTop)
+		left_vbox.addWidget(self.link_check, 0, Qt.AlignCenter | Qt.AlignTop)
+		left_vbox.addWidget(self.latex_check, 0, Qt.AlignCenter | Qt.AlignTop)
 
 		right_vbox = QVBoxLayout()
 		right_vbox.addWidget(table_label, 0, Qt.AlignCenter | Qt.AlignTop)
-		right_vbox.addWidget(table_dropdown, 0, Qt.AlignCenter | Qt.AlignTop)
+		right_vbox.addWidget(self.table_dropdown, 0, Qt.AlignCenter | Qt.AlignTop)
+		right_vbox.addWidget(headtail_label, 0, Qt.AlignCenter | Qt.AlignTop)
+		right_vbox.addWidget(self.headtail_dropdown, 0, Qt.AlignCenter | Qt.AlignTop)
+		right_vbox.addWidget(output_label, 0, Qt.AlignCenter | Qt.AlignTop)
+		right_vbox.addWidget(self.output_dropdown, 0, Qt.AlignCenter | Qt.AlignTop)
 
 		hbox_top = QHBoxLayout()
 		hbox_top.addLayout(left_vbox)
@@ -153,8 +173,7 @@ class MainWindow(QMainWindow):
 
 		if directory:
 			directory += "/*.pdf"
-			print(directory)
-			self.processDocuments(directory)
+			self.process_pdfs(directory)
 
 	def fileScrape(self): # change to file later
 		options = QFileDialog.Options()
@@ -162,17 +181,36 @@ class MainWindow(QMainWindow):
 
 		fileName, _ = QFileDialog.getOpenFileName(self,"QFileDialog.getOpenFileName()", home_directory,"PDF Files (*.pdf)", options=options)
 		if fileName:
-			self.processDocuments(fileName) 
+			self.process_pdfs(fileName) 
 
-	def processDocuments(self, path):
+	def process_pdfs(self, path):
 		self.directory_button.setEnabled(False) # Turn off buttons
 		self.file_button.setEnabled(False)
 
-		#self.scurrier = MuPDFScurrier(path)
-		#elf.scurrier.progress.connect(self.update_progress)
-		#self.scurrier.finished.connect(self.processing_finished)
-		#self.scurrier.current_pdf.connect(self.pass_current_pdf)
-		#self.scurrier.start()
+		settings = []
+		settings.append(self.ocr_check.isChecked())
+		settings.append(self.ref_check.isChecked())
+		settings.append(self.link_check.isChecked())
+		settings.append(self.latex_check.isChecked())
+		settings.append(self.table_dropdown.currentText())
+		settings.append(self.headtail_dropdown.currentText())
+		settings.append(self.output_dropdown.currentText())
+
+		self.scurrier = MuPDFScurrier(settings, path)
+		self.scurrier.progress.connect(self.update_progress)
+		self.scurrier.finished.connect(self.processing_finished)
+		self.scurrier.current_pdf.connect(self.pass_current_pdf)
+		self.scurrier.start()
+
+	def update_progress(self):
+		pass
+
+	def processing_finished(self):
+		self.directory_button.setEnabled(True) # Turn off buttons
+		self.file_button.setEnabled(True)
+
+	def pass_current_pdf(self):
+		pass
 
 	def initViewerUI(self):
 		pass
