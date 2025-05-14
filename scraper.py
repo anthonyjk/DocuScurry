@@ -16,11 +16,13 @@ class MuPDFScurrier(QThread):
 	current_pdf = pyqtSignal(str)
 	finished = pyqtSignal(list)
 	error = pyqtSignal(str)
+	output = pyqtSignal(str)
 
 	def __init__(self, settings, directory):
 		super().__init__()
 		self.directory = directory
 		self.results = []
+		self.data_str = ""
 
 		self.use_image_ocr = settings[0]
 		self.include_references = settings[1]
@@ -36,10 +38,9 @@ class MuPDFScurrier(QThread):
 		'''
 
 		name = "data"
-		folder = self.directory
+		file_paths = self.directory
 		progress_percentage = 0
 
-		file_paths = glob(folder)
 		print(file_paths)
 
 		start_time = time.time()
@@ -48,10 +49,10 @@ class MuPDFScurrier(QThread):
 		completed = 0
 		n = len(file_paths)
 
-		f = open(name+".json", 'w', encoding='utf-8')
+		#f = open(name+".json", 'w', encoding='utf-8')
 
 		# Open
-		f.write('[\n')
+		self.data_str += '[\n'
 
 		tot_end = ","
 		print(f"Scraped {completed}/{n}", end='\r')
@@ -67,68 +68,68 @@ class MuPDFScurrier(QThread):
 			self.current_pdf.emit(data["title"])
 
 			# Begin PDF insertion
-			f.write('\t{\n')
+			self.data_str += ('\t{\n')
 
 			# Title
-			f.write(f'\t\t"title": "{data["title"]}",\n')
+			self.data_str += (f'\t\t"title": "{data["title"]}",\n')
 
 			# Text
 			end = ","
-			f.write('\t\t"text": [\n')
+			self.data_str += ('\t\t"text": [\n')
 			for i in range(len(data["text"])):
 				if i == len(data["text"]) - 1:
 					end = "" # Last
 				if data["text"][i] != "":
-					f.write(f'\t\t\t"{data["text"][i]}"{end}\n')
+					self.data_str += (f'\t\t\t"{data["text"][i]}"{end}\n')
 				else:
-					f.write(f'\t\t\tnull{end}\n')
-			f.write('\t\t],\n')
+					self.data_str += (f'\t\t\tnull{end}\n')
+			self.data_str += ('\t\t],\n')
 
 			# Tables
 			end = ","
-			f.write(f'\t\t"tables": [\n')
+			self.data_str += (f'\t\t"tables": [\n')
 			for i in range(len(data["tables"])):
 				if i == len(data["tables"]) - 1:
 					end = ""
 
 				if len(data["tables"][i]) == 0 or data["tables"][i] == [""]:
-					f.write(f'\t\t\tnull{end}\n')
+					self.data_str += (f'\t\t\tnull{end}\n')
 				elif len(data["tables"][i]) == 1:
-					f.write(f'\t\t\t"{data["tables"][i][0]}"{end}\n')
+					self.data_str += (f'\t\t\t"{data["tables"][i][0]}"{end}\n')
 				else:
-					f.write('\t\t\t[')
+					self.data_str += ('\t\t\t[')
 					collect = ''
 					for j in range(len(data["tables"][i])):
 						collect += f'"{data["tables"][i][j]}", '
 					collect = collect[:-2] # Remove last ', '
-					f.write(f'{collect}]{end}\n')
-			f.write('\t\t],\n')
+					self.data_str += (f'{collect}]{end}\n')
+			self.data_str += ('\t\t],\n')
 
 			# Images
 			if(self.use_image_ocr == True): # If checkbox for Image Text Extraction is checked
 				end = ","
-				f.write('\t\t"images": [\n')
+				self.data_str += ('\t\t"images": [\n')
 				for i in range(len(data["images"])):
 					if i == len(data["images"]) - 1:
 						end = ""
 
 					#print(data["images"][i])
 					if data["images"][i] == []:
-						f.write(f'\t\t\tnull{end}\n')
+						self.data_str += (f'\t\t\tnull{end}\n')
 					elif len(data["images"][i]) == 1:
-						f.write(f'\t\t\t"{data["images"][i][0]}"{end}\n')
+						self.data_str += (f'\t\t\t"{data["images"][i][0]}"{end}\n')
 					else:
-						f.write('\t\t\t[')
+						self.data_str += ('\t\t\t[')
 						collect = ''
 						for j in range(len(data["images"][i])):
 							if(data["images"][i][j] != ""):
 								collect += f'"{data["images"][i][j]}", '
 						collect = collect[:-2] # Remove last ', '
-						f.write(f'{collect}]{end}\n')
-				f.write('\t\t]\n')
+						self.data_str += (f'{collect}]{end}\n')
+				self.data_str += ('\t\t]\n')
 
 			# End PDF Data
-			f.write('\t}' + tot_end + '\n')
+			self.data_str += ('\t}' + tot_end + '\n')
 			completed += 1
 			progress_percentage = (int)((completed / n) * 100)
 			self.progress.emit(progress_percentage)
@@ -138,8 +139,8 @@ class MuPDFScurrier(QThread):
 			print(f"Scraped {completed}/{n}, t(s): {elapsed}", end='\r')
 			t_info.append(elapsed)
 
-		f.write(']')
-		f.close()
+		self.data_str += (']')
+		#f.close()
 
 		try:
 			os.remove('./temp.jpeg')
@@ -149,6 +150,7 @@ class MuPDFScurrier(QThread):
 		self.convert_output()
 		self.progress.emit(100)
 		self.finished.emit(self.results)
+		self.output.emit(self.data_str)
 
 
 	def pdf_scrape(self, path):
